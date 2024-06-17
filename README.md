@@ -1,1 +1,2 @@
-# calendar-bookint-to-google-sheets
+# calendar-to-google-sheets
+
