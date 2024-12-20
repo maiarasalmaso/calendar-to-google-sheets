@@ -1,82 +1,49 @@
-function extrairEventosConcluidosAgosto() {
-  var calendarioId='INSIRA SEU ID AQUI';
-  var calendario=CalendarApp.getCalendarById(calendarioId);
+function extrairEventosConcluidosDezembro() {
+  var calendarioId = 'INSIRA SEU ID AQUI';
+  var calendario = CalendarApp.getCalendarById(calendarioId);
 
-  if(!calendario){
-    SpreadsheetApp.getActiveSpreadsheet().toast('O calendário não foi encontrado. Verifique o ID do calendário.', 'Erro', 5);
-    return;
-  }
+  var eventos = calendario.getEvents(new Date('2024-11-30'), new Date('2024-12-31')).sort((a, b) => a.getStartTime() - b.getStartTime());
 
-  var dataInicioAgosto=new Date('2024-08-01');
-  var dataFimAgosto=new Date('2024-08-31');
+  var planilha = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('dezembro') || SpreadsheetApp.getActiveSpreadsheet().insertSheet('dezembro');
+  planilha.clear();
 
-  var eventosAgosto=calendario.getEvents(dataInicioAgosto,dataFimAgosto);
+  planilha.appendRow(['Nome', 'Data', 'Hora', 'Paciente', 'Valor da Terapia']).getRange(1, 1, 1, 5)
+    .setFontWeight('bold').setHorizontalAlignment('center');
 
-  var planilhaAgosto=SpreadsheetApp.getActiveSpreadsheet().getSheetByName('agosto');
-  if(!planilhaAgosto){
-    planilhaAgosto=SpreadsheetApp.getActiveSpreadsheet().insertSheet();
-    planilhaAgosto.setName('agosto');
-  }else{
-    planilhaAgosto.clear();
-  }
+  var eventosPorReservadoPor = {};
 
-  var cabecalhos=['Sala Reservada','Reservado por','Paciente','Valor da Terapia','Data Reservada','Hora Reservada'];
-  planilhaAgosto.appendRow(cabecalhos);
+  eventos.forEach(evento => {
+    var descricao = evento.getDescription();
+    var reservadoPor = (descricao.match(/<b>Reservado por<\/b>\n([^<\n]+)/) || [])[1] || '';
+    var paciente = (descricao.match(/<b>Paciente<\/b>\n([^\n]+)/) || [])[1] || '';
+    var valorTerapia = parseFloat((descricao.match(/<b>Valor da terapia<\/b>\n([^\n]+)/) || [])[1]) || 0;
 
-  var somaPorReservadoPor={}; // Objeto para armazenar a soma dos valores por "Reservado por"
+    if (evento.getGuestList().every(convidado => convidado.getGuestStatus() === CalendarApp.GuestStatus.NO)) return;
 
-  eventosAgosto.forEach(function(evento){
-    var descricao=evento.getDescription();
-    var reservadoPor='';
-    var paciente='';
-    var valorTerapia=0; // Inicializa o valor da terapia como zero
-
-    var reservadoPorMatch=descricao.match(/<b>Reservado por<\/b>\n([^<\n]+)/);
-    if(reservadoPorMatch&&reservadoPorMatch.length>1){
-      reservadoPor=reservadoPorMatch[1].replace(/<br>/g,'');
-    }
-
-    var pacienteMatch=descricao.match(/<b>Paciente<\/b>\n([^\n]+)/);
-    if(pacienteMatch&&pacienteMatch.length>1){
-      paciente=pacienteMatch[1];
-    }
-
-    var valorTerapiaMatch=descricao.match(/<b>Valor da terapia<\/b>\n([^\n]+)/);
-    if(valorTerapiaMatch&&valorTerapiaMatch.length>1){
-      valorTerapia=parseFloat(valorTerapiaMatch[1]); // Converte o valor para número
-    }
-
-    if(!somaPorReservadoPor[reservadoPor]){
-      somaPorReservadoPor[reservadoPor]=0;
-    }
-
-    somaPorReservadoPor[reservadoPor]+=valorTerapia; // Adiciona o valor à soma
-
-    var titulo=evento.getTitle();
-    var sala='';
-
-    var salaMatch=titulo.match(/Sala \d+/);
-    if(salaMatch&&salaMatch.length>0){
-      sala=salaMatch[0];
-    }
-
-    var linha=[
-      sala,
+    if (!eventosPorReservadoPor[reservadoPor]) eventosPorReservadoPor[reservadoPor] = [];
+    eventosPorReservadoPor[reservadoPor].push([
       reservadoPor,
+      Utilities.formatDate(evento.getStartTime(), Session.getScriptTimeZone(), 'dd/MM/yyyy'),
+      evento.getStartTime().toLocaleTimeString(),
       paciente,
-      valorTerapia,
-      evento.getStartTime().toLocaleDateString(),
-      evento.getStartTime().toLocaleTimeString()
-    ];
-    planilhaAgosto.appendRow(linha);
+      valorTerapia
+    ]);
   });
 
-  Object.keys(somaPorReservadoPor).forEach(function(reservadoPor){
-    var valorTotal=somaPorReservadoPor[reservadoPor];
-    var valorDesconto=valorTotal*0.30; // Calcula 30% do valor total
-    planilhaAgosto.appendRow(['',reservadoPor,'',valorTotal,'','']); // Adiciona a soma
-    planilhaAgosto.appendRow(['','30% de '+reservadoPor,'',valorDesconto,'','']); 
+  var linhaAtual = 2;
+  Object.keys(eventosPorReservadoPor).forEach(reservadoPor => {
+    var grupo = eventosPorReservadoPor[reservadoPor];
+    planilha.getRange(linhaAtual, 1, grupo.length, 1).merge().setValue(`${reservadoPor} (${grupo.length} reservas)`)
+      .setFontWeight('bold').setHorizontalAlignment('center').setVerticalAlignment('middle');
+
+    grupo.forEach((linha, index) => {
+      planilha.getRange(linhaAtual + index, 2, 1, 4).setValues([linha.slice(1)]).setHorizontalAlignment('center');
+    });
+
+    planilha.getRange(linhaAtual, 1, grupo.length, 5).setBorder(true, true, true, true, true, true);
+    linhaAtual += grupo.length + 1;
+    if (grupo.length > 0) planilha.insertRowAfter(linhaAtual - 1);
   });
 
-  SpreadsheetApp.getActiveSpreadsheet().toast('Eventos concluídos para agosto extraídos com sucesso!', 'Concluído', 5);
+  SpreadsheetApp.getActiveSpreadsheet().toast('Eventos concluídos para dezembro extraídos com sucesso!', 'Concluído', 5);
 }
